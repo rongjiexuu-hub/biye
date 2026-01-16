@@ -119,9 +119,9 @@ class Pose2DEstimator:
             model_complexity: 模型复杂度 (0, 1, 2)
             static_image_mode: 静态图像模式（对于单张图片设为True）
         """
-        self.mp_pose = mp_pose
-        self.mp_drawing = mp_drawing
-        self.mp_drawing_styles = mp_drawing_styles
+        self.mp_pose = mp.solutions.pose
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.mp_drawing_styles = mp.solutions.drawing_styles
         
         self.pose = self.mp_pose.Pose(
             static_image_mode=static_image_mode,

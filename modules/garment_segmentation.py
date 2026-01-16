@@ -73,12 +73,7 @@ class GarmentSegmenter:
         if use_mediapipe:
             import mediapipe as mp
             # 兼容不同版本的 mediapipe 导入方式
-            try:
-                import mediapipe.python.solutions.selfie_segmentation as mp_selfie
-            except ImportError:
-                mp_selfie = mp.solutions.selfie_segmentation
-                
-            self.mp_selfie = mp_selfie
+            self.mp_selfie = mp.solutions.selfie_segmentation
             self.segmenter = self.mp_selfie.SelfieSegmentation(model_selection=1)
     
     def segment(self, image: np.ndarray, person_keypoints: Optional[np.ndarray] = None) -> SegmentationResult:

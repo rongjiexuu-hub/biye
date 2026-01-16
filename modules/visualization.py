@@ -469,53 +469,6 @@ class Visualizer:
             frame = self.visualize_mesh_3d(vertices, faces, elev=10, azim=azim)
             frames.append(frame)
         return frames
-    
-    def visualize_try_on(
-        self,
-        body_vertices: np.ndarray,
-        body_faces: np.ndarray,
-        garment_vertices: np.ndarray,
-        garment_faces: np.ndarray,
-        garment_texture: Optional[np.ndarray] = None,
-        title: str = "Virtual Try-On Result",
-        elev: float = 10,
-        azim: float = -90
-    ) -> str:
-        """
-        生成试穿效果的3D可视化
-        """
-        fig = plt.figure(figsize=(10, 8))
-        ax = fig.add_subplot(111, projection='3d')
-        
-        ax.set_facecolor(self.config.background_color)
-        fig.patch.set_facecolor(self.config.background_color)
-        
-        # 转换坐标系
-        v_body = np.column_stack([body_vertices[:, 0], body_vertices[:, 2], body_vertices[:, 1]])
-        v_garment = np.column_stack([garment_vertices[:, 0], garment_vertices[:, 2], garment_vertices[:, 1]])
-        
-        # 绘制人体 (半透明)
-        body_mesh_faces = v_body[body_faces[:5000]]
-        body_coll = Poly3DCollection(body_mesh_faces, alpha=0.3, facecolor='#e0e0e0', edgecolor='none')
-        ax.add_collection3d(body_coll)
-        
-        # 绘制服装
-        garment_mesh_faces = v_garment[garment_faces]
-        garment_coll = Poly3DCollection(garment_mesh_faces, alpha=1.0, facecolor='#ff4d4d', edgecolor='none')
-        ax.add_collection3d(garment_coll)
-        
-        # 设置视角和范围
-        ax.view_init(elev=elev, azim=azim)
-        all_v = np.vstack([v_body, v_garment])
-        max_range = np.max(np.abs(all_v)) * 1.1
-        ax.set_xlim([-max_range, max_range])
-        ax.set_ylim([-max_range, max_range])
-        ax.set_zlim([-max_range, max_range])
-        
-        ax.set_title(title, fontsize=14, color='white')
-        ax.axis('off')
-        
-        return self._fig_to_base64(fig)
 
     def _fig_to_base64(self, fig) -> str:
         """将matplotlib图像转换为base64编码"""
