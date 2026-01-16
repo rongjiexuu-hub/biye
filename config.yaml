@@ -1,0 +1,56 @@
+# 人体姿态与形状估计系统配置文件
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: true
+
+# 上传文件配置
+upload:
+  folder: "uploads"
+  allowed_extensions:
+    - jpg
+    - jpeg
+    - png
+    - webp
+  max_size_mb: 10
+
+# 模型配置
+models:
+  # SMPL模型路径 - 可以是目录或具体的.pkl文件路径
+  # 例如: "models/smpl" 或 "D:/path/to/basicmodel_neutral_lbs_10_207_0_v1.1.0.pkl"
+  smpl_model_path: "models/smpl"
+  # HMR模型路径
+  hmr_model_path: "models/hmr"
+  # 设备选择 (cuda/cpu) - 无GPU时自动切换为cpu
+  device: "cpu"
+
+# 2D姿态估计配置
+pose_2d:
+  # MediaPipe配置
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+  model_complexity: 2
+
+# 3D重建配置
+pose_3d:
+  # 图像输入尺寸
+  input_size: 224
+  # 是否启用形状优化
+  optimize_shape: true
+  # 迭代次数
+  num_iterations: 100
+
+# 可视化配置
+visualization:
+  # 渲染图像尺寸
+  render_width: 800
+  render_height: 600
+  # 是否显示关键点
+  show_keypoints: true
+  # 是否显示骨架
+  show_skeleton: true
+  # 是否显示网格
+  show_mesh: true
+

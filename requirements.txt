@@ -1,0 +1,39 @@
+# 人体姿态与形状估计系统依赖
+
+# ============ Web框架 ============
+flask>=3.0.0
+flask-cors>=4.0.0
+werkzeug>=3.0.0
+
+# ============ 深度学习框架 ============
+# PyTorch - 根据系统选择安装方式:
+# CPU版本: pip install torch torchvision
+# GPU版本: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+torch>=2.0.0
+torchvision>=0.15.0
+
+# ============ 图像处理 ============
+opencv-python>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+scipy>=1.11.0
+
+# ============ 2D姿态估计 ============
+# 注意: mediapipe 0.10.10+ 移除了 solutions 模块，需要使用 0.10.9 或更早版本
+mediapipe==0.10.9
+
+# ============ 3D人体模型 ============
+trimesh>=4.0.0
+# pyrender>=0.1.45  # 可选，用于高级渲染
+# smplx>=0.1.28     # 可选，完整SMPL-X支持
+# chumpy>=0.70      # 可选，SMPL模型加载
+
+# ============ 可视化 ============
+matplotlib>=3.7.0
+plotly>=5.18.0
+
+# ============ 工具库 ============
+tqdm>=4.66.0
+PyYAML>=6.0.0
+requests>=2.31.0
+

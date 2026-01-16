@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人体姿态与形状估计系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a2e;
+            --bg-hover: #252540;
+            --accent-cyan: #00d9ff;
+            --accent-magenta: #ff00aa;
+            --accent-purple: #7b2cbf;
+            --accent-gradient: linear-gradient(135deg, #00d9ff 0%, #ff00aa 100%);
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --success: #00ff88;
+            --error: #ff4757;
+            --warning: #ffa502;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* 背景动画 */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(0, 217, 255, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 80% 20%, rgba(255, 0, 170, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 40% 40%, rgba(123, 44, 191, 0.05) 0%, transparent 30%);
+        }
+
+        .grid-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background-image: 
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 50px 50px;
+        }
+
+        /* 头部 */
+        header {
+            padding: 2rem 3rem;
+            background: rgba(10, 10, 15, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: var(--accent-gradient);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .logo-text {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid var(--success);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--success);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 主内容 */
+        main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 3rem;
+        }
+
+        .hero-section {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .hero-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            line-height: 1.3;
+        }
+
+        .hero-title span {
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-desc {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* 上传区域 */
+        .upload-section {
+            margin-bottom: 3rem;
+        }
+
+        .upload-zone {
+            background: var(--bg-card);
+            border: 2px dashed var(--border-color);
+            border-radius: 20px;
+            padding: 4rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--accent-cyan);
+            background: var(--bg-hover);
+        }
+
+        .upload-zone.dragover::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 217, 255, 0.1);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 1.5rem;
+            opacity: 0.8;
+        }
+
+        .upload-text {
+            font-size: 1.2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-hint {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* 预览区域 */
+        .preview-section {
+            display: none;
+            margin-bottom: 2rem;
+        }
+
+        .preview-section.active {
+            display: block;
+        }
+
+        .preview-card {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 1.5rem;
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .preview-image-container {
+            width: 300px;
+            height: 300px;
+            border-radius: 15px;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            flex-shrink: 0;
+        }
+
+        .preview-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .preview-info {
+            flex: 1;
+        }
+
+        .preview-filename {
+            font-size: 1.2rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .preview-meta {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.8rem 2rem;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--accent-gradient);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 217, 255, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card);
+        }
+
+        /* 分析模式选择器 */
+        .analysis-mode-selector {
+            margin: 1rem 0;
+            width: 100%;
+        }
+
+        .mode-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .mode-options {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .mode-option {
+            flex: 1;
+            cursor: pointer;
+        }
+
+        .mode-option input {
+            display: none;
+        }
+
+        .mode-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .mode-option input:checked + .mode-card {
+            border-color: var(--accent-purple);
+            background: linear-gradient(135deg, rgba(168, 85, 247, 0.1), rgba(56, 189, 248, 0.1));
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+        }
+
+        .mode-card:hover {
+            border-color: var(--accent-cyan);
+        }
+
+        .mode-icon {
+            font-size: 2rem;
+        }
+
+        .mode-text {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        /* 加载状态 */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(10, 10, 15, 0.9);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid var(--bg-card);
+            border-top-color: var(--accent-cyan);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+        }
+
+        .loading-steps {
+            margin-top: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .loading-step {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .loading-step.active {
+            color: var(--accent-cyan);
+        }
+
+        .loading-step.completed {
+            color: var(--success);
+        }
+
+        .step-icon {
+            width: 20px;
+            height: 20px;
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+        }
+
+        .loading-step.completed .step-icon::before {
+            content: '✓';
+        }
+
+        /* 结果区域 */
+        .results-section {
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .results-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .result-card {
+            background: var(--bg-card);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+
+        .result-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .result-card-header {
+            padding: 1rem 1.5rem;
+            background: var(--bg-hover);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .result-card-title {
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .result-card-body {
+            padding: 1rem;
+        }
+
+        .result-image {
+            width: 100%;
+            border-radius: 10px;
+            background: var(--bg-secondary);
+        }
+
+        /* 参数面板 */
+        .params-panel {
+            background: var(--bg-card);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .params-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .params-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .param-item {
+            background: var(--bg-hover);
+            padding: 1rem;
+            border-radius: 10px;
+        }
+
+        .param-label {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .param-value {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--accent-cyan);
+        }
+
+        /* 3D视图控制 */
+        .view-controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .view-btn {
+            padding: 0.4rem 0.8rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .view-btn:hover, .view-btn.active {
+            background: var(--accent-cyan);
+            color: var(--bg-primary);
+            border-color: var(--accent-cyan);
+        }
+
+        /* 下载按钮 */
+        .download-section {
+            margin-top: 2rem;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .download-btn {
+            padding: 0.8rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .download-btn:hover {
+            border-color: var(--accent-magenta);
+            background: rgba(255, 0, 170, 0.1);
+        }
+
+        /* 置信度条 */
+        .confidence-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .confidence-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .confidence-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+        }
+
+        .confidence-name {
+            color: var(--text-primary);
+        }
+
+        .confidence-value {
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        .confidence-bar {
+            height: 8px;
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan));
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        /* 服装分析结果隐藏 */
+        .garment-results {
+            display: none;
+        }
+
+        .garment-results.active {
+            display: block;
+        }
+
+        /* Toast通知 */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem 1.5rem;
+            background: var(--bg-card);
+            border-left: 4px solid var(--accent-cyan);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            z-index: 2000;
+            transform: translateX(150%);
+            transition: transform 0.3s ease;
+            max-width: 400px;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+        }
+
+        .toast.error {
+            border-left-color: var(--error);
+        }
+
+        .toast.success {
+            border-left-color: var(--success);
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            header {
+                padding: 1rem 1.5rem;
+            }
+
+            main {
+                padding: 1.5rem;
+            }
+
+            .hero-title {
+                font-size: 1.8rem;
+            }
+
+            .preview-card {
+                flex-direction: column;
+            }
+
+            .preview-image-container {
+                width: 100%;
+                height: 250px;
+            }
+
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .btn-group {
+                flex-direction: column;
+            }
+        }
+
+        /* 技术指标卡片 */
+        .tech-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 3rem;
+        }
+
+        .tech-card {
+            background: var(--bg-card);
+            border-radius: 15px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .tech-card:hover {
+            border-color: var(--accent-purple);
+            transform: translateY(-3px);
+        }
+
+        .tech-card-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--accent-purple), var(--accent-magenta));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .tech-card-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .tech-card-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+    <div class="grid-overlay"></div>
+
+    <header>
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon">🧍</div>
+                <div class="logo-text">POSE3D</div>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span>系统就绪</span>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="hero-section">
+            <h1 class="hero-title">
+                人体姿态与<span>形状估计</span>系统
+            </h1>
+            <p class="hero-desc">
+                基于深度学习的单图像3D人体重建，支持2D关键点检测、3D姿态估计和SMPL模型生成
+            </p>
+        </section>
+
+        <!-- 上传区域 -->
+        <section class="upload-section">
+            <div class="upload-zone" id="upload-zone">
+                <div class="upload-icon">📸</div>
+                <div class="upload-text">点击或拖拽上传人像照片</div>
+                <div class="upload-hint">支持 JPG、PNG、WebP 格式，最大 10MB</div>
+            </div>
+            <input type="file" id="file-input" accept="image/*">
+        </section>
+
+        <!-- 预览区域 -->
+        <section class="preview-section" id="preview-section">
+            <div class="preview-card">
+                <div class="preview-image-container">
+                    <img id="preview-image" class="preview-image" src="" alt="预览图">
+                </div>
+                <div class="preview-info">
+                    <div class="preview-filename" id="preview-filename">filename.jpg</div>
+                    <div class="preview-meta" id="preview-meta">尺寸: 1920 x 1080 | 大小: 2.5 MB</div>
+                    
+                    <!-- 分析模式选择 -->
+                    <div class="analysis-mode-selector">
+                        <div class="mode-label">选择分析模式：</div>
+                        <div class="mode-options">
+                            <label class="mode-option">
+                                <input type="radio" name="analysis-mode" value="pose" checked>
+                                <span class="mode-card">
+                                    <span class="mode-icon">🧍</span>
+                                    <span class="mode-text">人体姿态</span>
+                                </span>
+                            </label>
+                            <label class="mode-option">
+                                <input type="radio" name="analysis-mode" value="garment">
+                                <span class="mode-card">
+                                    <span class="mode-icon">👕</span>
+                                    <span class="mode-text">服装分析</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button class="btn btn-primary" id="analyze-btn">
+                            <span>🔍</span>
+                            <span>开始分析</span>
+                        </button>
+                        <button class="btn btn-secondary" id="cancel-btn">
+                            <span>✕</span>
+                            <span>取消</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 结果区域 -->
+        <section class="results-section" id="results-section">
+            <div class="results-header">
+                <h2 class="results-title">📊 分析结果</h2>
+                <button class="btn btn-secondary" id="new-analysis-btn">
+                    <span>➕</span>
+                    <span>新分析</span>
+                </button>
+            </div>
+
+            <div class="results-grid">
+                <!-- 原图 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>📷</span>
+                            原始图像
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="result-original" class="result-image" src="" alt="原图">
+                    </div>
+                </div>
+
+                <!-- 2D姿态 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>🎯</span>
+                            2D关键点检测
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="result-pose2d" class="result-image" src="" alt="2D姿态">
+                    </div>
+                </div>
+
+                <!-- 3D骨架 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>🦴</span>
+                            3D骨架重建
+                        </span>
+                        <div class="view-controls">
+                            <button class="view-btn active" data-view="front">正面</button>
+                            <button class="view-btn" data-view="side">侧面</button>
+                        </div>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="result-skeleton3d" class="result-image" src="" alt="3D骨架">
+                    </div>
+                </div>
+
+                <!-- 3D网格 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>🧬</span>
+                            3D人体网格
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="result-mesh3d" class="result-image" src="" alt="3D网格">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 形状参数 -->
+            <div class="params-panel">
+                <h3 class="params-title">
+                    <span>📐</span>
+                    SMPL形状参数
+                </h3>
+                <img id="result-shape-params" class="result-image" src="" alt="形状参数" style="max-width: 100%;">
+            </div>
+
+            <!-- 关键点信息 -->
+            <div class="params-panel">
+                <h3 class="params-title">
+                    <span>📍</span>
+                    检测信息
+                </h3>
+                <div class="params-grid" id="detection-info">
+                    <div class="param-item">
+                        <div class="param-label">检测置信度</div>
+                        <div class="param-value" id="confidence-value">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">2D关键点数量</div>
+                        <div class="param-value" id="keypoints-count">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">3D关节数量</div>
+                        <div class="param-value" id="joints-count">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">网格顶点数</div>
+                        <div class="param-value" id="vertices-count">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 下载区域 -->
+            <div class="download-section" id="pose-download-section">
+                <button class="download-btn" id="download-mesh">
+                    <span>📦</span>
+                    下载3D模型 (OBJ)
+                </button>
+                <button class="download-btn" id="download-json">
+                    <span>📄</span>
+                    下载参数数据 (JSON)
+                </button>
+            </div>
+        </section>
+
+        <!-- 服装分析结果区域 -->
+        <section class="results-section garment-results" id="garment-results-section">
+            <div class="results-header">
+                <h2 class="results-title">👕 服装分析结果</h2>
+                <button class="btn btn-secondary" id="garment-new-analysis-btn">
+                    <span>➕</span>
+                    <span>新分析</span>
+                </button>
+            </div>
+
+            <div class="results-grid">
+                <!-- 原图 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>📷</span>
+                            原始图像
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="garment-original" class="result-image" src="" alt="原图">
+                    </div>
+                </div>
+
+                <!-- 服装分割 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>✂️</span>
+                            服装分割
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="garment-segmentation" class="result-image" src="" alt="服装分割">
+                    </div>
+                </div>
+
+                <!-- 3D投影 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>🎨</span>
+                            3D投影效果
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="garment-3d" class="result-image" src="" alt="3D投影">
+                    </div>
+                </div>
+
+                <!-- UV贴图 -->
+                <div class="result-card">
+                    <div class="result-card-header">
+                        <span class="result-card-title">
+                            <span>🗺️</span>
+                            UV贴图
+                        </span>
+                    </div>
+                    <div class="result-card-body">
+                        <img id="garment-uv" class="result-image" src="" alt="UV贴图">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 语义信息 -->
+            <div class="params-panel">
+                <h3 class="params-title">
+                    <span>🏷️</span>
+                    服装语义信息
+                </h3>
+                <div class="params-grid" id="garment-semantic-info">
+                    <div class="param-item">
+                        <div class="param-label">服装类型</div>
+                        <div class="param-value" id="garment-type">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">主要颜色</div>
+                        <div class="param-value" id="garment-color">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">材质类型</div>
+                        <div class="param-value" id="garment-material">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">款式风格</div>
+                        <div class="param-value" id="garment-style">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">袖型</div>
+                        <div class="param-value" id="garment-sleeve">--</div>
+                    </div>
+                    <div class="param-item">
+                        <div class="param-label">领型</div>
+                        <div class="param-value" id="garment-neckline">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 置信度 -->
+            <div class="params-panel">
+                <h3 class="params-title">
+                    <span>📊</span>
+                    分类置信度
+                </h3>
+                <div class="confidence-bars" id="garment-confidence-bars">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+
+            <!-- 下载区域 -->
+            <div class="download-section">
+                <button class="download-btn" id="download-garment-texture">
+                    <span>🖼️</span>
+                    下载纹理贴图
+                </button>
+                <button class="download-btn" id="download-garment-json">
+                    <span>📄</span>
+                    下载语义数据 (JSON)
+                </button>
+            </div>
+        </section>
+
+        <!-- 技术介绍 -->
+        <section class="tech-cards">
+            <div class="tech-card">
+                <div class="tech-card-icon">🎯</div>
+                <h4 class="tech-card-title">2D姿态估计</h4>
+                <p class="tech-card-desc">
+                    使用MediaPipe Pose检测33个人体关键点，包括面部、躯干和四肢的精确定位。
+                </p>
+            </div>
+            <div class="tech-card">
+                <div class="tech-card-icon">🧠</div>
+                <h4 class="tech-card-title">HMR深度学习</h4>
+                <p class="tech-card-desc">
+                    基于ResNet50的特征提取网络，迭代回归预测SMPL模型的姿态和形状参数。
+                </p>
+            </div>
+            <div class="tech-card">
+                <div class="tech-card-icon">🧬</div>
+                <h4 class="tech-card-title">SMPL人体模型</h4>
+                <p class="tech-card-desc">
+                    参数化人体模型，通过72维姿态参数和10维形状参数生成精确的3D人体网格。
+                </p>
+            </div>
+            <div class="tech-card">
+                <div class="tech-card-icon">🎨</div>
+                <h4 class="tech-card-title">可视化渲染</h4>
+                <p class="tech-card-desc">
+                    多视角3D渲染，支持骨架、网格展示，可导出OBJ格式3D模型文件。
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <!-- 加载遮罩 -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在分析图像...</div>
+        <div class="loading-steps">
+            <div class="loading-step" id="step-upload">
+                <span class="step-icon"></span>
+                <span>图像上传</span>
+            </div>
+            <div class="loading-step" id="step-2d">
+                <span class="step-icon"></span>
+                <span>2D姿态估计</span>
+            </div>
+            <div class="loading-step" id="step-3d">
+                <span class="step-icon"></span>
+                <span>3D形状重建</span>
+            </div>
+            <div class="loading-step" id="step-render">
+                <span class="step-icon"></span>
+                <span>渲染可视化</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast通知 -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // DOM 元素
+        const uploadZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+        const previewSection = document.getElementById('preview-section');
+        const previewImage = document.getElementById('preview-image');
+        const previewFilename = document.getElementById('preview-filename');
+        const previewMeta = document.getElementById('preview-meta');
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const resultsSection = document.getElementById('results-section');
+        const garmentResultsSection = document.getElementById('garment-results-section');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const toast = document.getElementById('toast');
+
+        let currentFile = null;
+        let currentFilename = null;
+        let currentAnalysisMode = 'pose'; // 'pose' 或 'garment'
+        let currentResult = null;
+
+        // 工具函数
+        function showToast(message, type = 'info') {
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        }
+
+        function setLoadingStep(step) {
+            const steps = ['upload', '2d', '3d', 'render'];
+            const currentIndex = steps.indexOf(step);
+            
+            steps.forEach((s, i) => {
+                const el = document.getElementById(`step-${s}`);
+                el.classList.remove('active', 'completed');
+                if (i < currentIndex) {
+                    el.classList.add('completed');
+                } else if (i === currentIndex) {
+                    el.classList.add('active');
+                }
+            });
+        }
+
+        // 文件上传处理
+        uploadZone.addEventListener('click', () => fileInput.click());
+        
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showToast('请上传图片文件', 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showToast('文件大小不能超过10MB', 'error');
+                return;
+            }
+
+            currentFile = file;
+
+            // 显示预览
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                
+                // 获取图片尺寸
+                const img = new Image();
+                img.onload = () => {
+                    previewMeta.textContent = `尺寸: ${img.width} × ${img.height} | 大小: ${formatFileSize(file.size)}`;
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            previewFilename.textContent = file.name;
+            previewSection.classList.add('active');
+            resultsSection.classList.remove('active');
+        }
+
+        // 取消按钮
+        cancelBtn.addEventListener('click', () => {
+            currentFile = null;
+            currentFilename = null;
+            previewSection.classList.remove('active');
+            fileInput.value = '';
+        });
+
+        // 获取分析模式
+        function getAnalysisMode() {
+            const modeRadio = document.querySelector('input[name="analysis-mode"]:checked');
+            return modeRadio ? modeRadio.value : 'pose';
+        }
+
+        // 更新加载步骤文本
+        function updateLoadingSteps(mode) {
+            const step2d = document.querySelector('#step-2d span:last-child');
+            const step3d = document.querySelector('#step-3d span:last-child');
+            const stepRender = document.querySelector('#step-render span:last-child');
+            
+            if (mode === 'garment') {
+                step2d.textContent = '服装分割';
+                step3d.textContent = '语义分析';
+                stepRender.textContent = '3D投影';
+            } else {
+                step2d.textContent = '2D姿态估计';
+                step3d.textContent = '3D形状重建';
+                stepRender.textContent = '渲染可视化';
+            }
+        }
+
+        // 开始分析
+        analyzeBtn.addEventListener('click', async () => {
+            if (!currentFile) return;
+
+            currentAnalysisMode = getAnalysisMode();
+            updateLoadingSteps(currentAnalysisMode);
+            
+            loadingOverlay.classList.add('active');
+            analyzeBtn.disabled = true;
+
+            try {
+                // 步骤1: 上传文件
+                setLoadingStep('upload');
+                const formData = new FormData();
+                formData.append('file', currentFile);
+
+                const uploadRes = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!uploadRes.ok) {
+                    const err = await uploadRes.json();
+                    throw new Error(err.error || '上传失败');
+                }
+
+                const uploadData = await uploadRes.json();
+                currentFilename = uploadData.filename;
+
+                if (currentAnalysisMode === 'garment') {
+                    // 服装分析流程
+                    await performGarmentAnalysis();
+                } else {
+                    // 人体姿态分析流程
+                    await performPoseAnalysis();
+                }
+
+                showToast('分析完成！', 'success');
+
+            } catch (error) {
+                showToast(error.message, 'error');
+                console.error(error);
+            } finally {
+                loadingOverlay.classList.remove('active');
+                analyzeBtn.disabled = false;
+            }
+        });
+
+        // 人体姿态分析
+        async function performPoseAnalysis() {
+            setLoadingStep('2d');
+            await new Promise(r => setTimeout(r, 500));
+            
+            setLoadingStep('3d');
+            
+            const estimateRes = await fetch('/api/estimate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: currentFilename })
+            });
+
+            if (!estimateRes.ok) {
+                const err = await estimateRes.json();
+                throw new Error(err.error || '分析失败');
+            }
+
+            setLoadingStep('render');
+            const resultData = await estimateRes.json();
+            currentResult = resultData.result;
+
+            displayResults();
+        }
+
+        // 服装分析
+        async function performGarmentAnalysis() {
+            setLoadingStep('2d');
+            
+            const analyzeRes = await fetch('/api/analyze_garment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: currentFilename })
+            });
+
+            if (!analyzeRes.ok) {
+                const err = await analyzeRes.json();
+                throw new Error(err.error || '服装分析失败');
+            }
+
+            setLoadingStep('3d');
+            await new Promise(r => setTimeout(r, 300));
+            
+            setLoadingStep('render');
+            const resultData = await analyzeRes.json();
+            currentResult = resultData.result;
+
+            displayGarmentResults();
+        }
+
+        // 显示结果
+        function displayResults() {
+            previewSection.classList.remove('active');
+            resultsSection.classList.add('active');
+
+            // 原图
+            document.getElementById('result-original').src = `/uploads/${currentFilename}`;
+
+            // 可视化结果
+            const vis = currentResult.visualizations;
+            document.getElementById('result-pose2d').src = `data:image/png;base64,${vis.pose_2d}`;
+            document.getElementById('result-skeleton3d').src = `data:image/png;base64,${vis.skeleton_3d_front}`;
+            document.getElementById('result-mesh3d').src = `data:image/png;base64,${vis.mesh_3d}`;
+            document.getElementById('result-shape-params').src = `data:image/png;base64,${vis.shape_params}`;
+
+            // 存储骨架视图
+            window.skeleton3dViews = {
+                front: vis.skeleton_3d_front,
+                side: vis.skeleton_3d_side
+            };
+
+            // 检测信息
+            document.getElementById('confidence-value').textContent = 
+                (currentResult.pose_2d.confidence * 100).toFixed(1) + '%';
+            document.getElementById('keypoints-count').textContent = 
+                currentResult.pose_2d.keypoints.length;
+            document.getElementById('joints-count').textContent = 
+                currentResult.pose_3d.joints_3d.length;
+            document.getElementById('vertices-count').textContent = 
+                currentResult.pose_3d.num_vertices.toLocaleString();
+        }
+
+        // 显示服装分析结果
+        function displayGarmentResults() {
+            previewSection.classList.remove('active');
+            resultsSection.classList.remove('active');
+            garmentResultsSection.classList.add('active');
+
+            // 原图
+            document.getElementById('garment-original').src = `/uploads/${currentFilename}`;
+
+            // 可视化结果
+            const vis = currentResult.visualizations;
+            if (vis.segmentation) {
+                document.getElementById('garment-segmentation').src = `data:image/png;base64,${vis.segmentation}`;
+            }
+            if (vis.projection_3d) {
+                document.getElementById('garment-3d').src = `data:image/png;base64,${vis.projection_3d}`;
+            }
+            if (vis.uv_map) {
+                document.getElementById('garment-uv').src = `data:image/png;base64,${vis.uv_map}`;
+            }
+
+            // 语义信息
+            const semantic = currentResult.semantic || {};
+            document.getElementById('garment-type').textContent = semantic.garment_type || '--';
+            document.getElementById('garment-color').textContent = semantic.primary_color || '--';
+            document.getElementById('garment-material').textContent = semantic.material || '--';
+            document.getElementById('garment-style').textContent = semantic.style || '--';
+            document.getElementById('garment-sleeve').textContent = semantic.sleeve_type || '--';
+            document.getElementById('garment-neckline').textContent = semantic.neckline || '--';
+
+            // 置信度条
+            const confidenceBars = document.getElementById('garment-confidence-bars');
+            confidenceBars.innerHTML = '';
+            
+            if (semantic.confidence_scores) {
+                Object.entries(semantic.confidence_scores).forEach(([name, value]) => {
+                    const percentage = (value * 100).toFixed(1);
+                    confidenceBars.innerHTML += `
+                        <div class="confidence-item">
+                            <div class="confidence-label">
+                                <span class="confidence-name">${name}</span>
+                                <span class="confidence-value">${percentage}%</span>
+                            </div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+        }
+
+        // 3D视图切换
+        document.querySelectorAll('.view-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                const view = btn.dataset.view;
+                if (window.skeleton3dViews && window.skeleton3dViews[view]) {
+                    document.getElementById('result-skeleton3d').src = 
+                        `data:image/png;base64,${window.skeleton3dViews[view]}`;
+                }
+            });
+        });
+
+        // 新分析按钮
+        document.getElementById('new-analysis-btn').addEventListener('click', () => {
+            resultsSection.classList.remove('active');
+            currentFile = null;
+            currentFilename = null;
+            currentResult = null;
+            fileInput.value = '';
+        });
+
+        // 服装分析新建按钮
+        document.getElementById('garment-new-analysis-btn').addEventListener('click', () => {
+            garmentResultsSection.classList.remove('active');
+            currentFile = null;
+            currentFilename = null;
+            currentResult = null;
+            fileInput.value = '';
+        });
+
+        // 下载按钮
+        document.getElementById('download-mesh').addEventListener('click', () => {
+            if (currentResult && currentResult.mesh_file) {
+                window.location.href = `/api/download/${currentResult.mesh_file}`;
+            }
+        });
+
+        document.getElementById('download-json').addEventListener('click', () => {
+            if (currentResult) {
+                const data = {
+                    pose_2d: currentResult.pose_2d,
+                    pose_3d: currentResult.pose_3d
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `pose_result_${currentResult.result_id}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        });
+
+        // 检查系统状态
+        async function checkHealth() {
+            try {
+                const res = await fetch('/api/health');
+                const data = await res.json();
+                if (!data.models_loaded) {
+                    showToast('模型正在加载中...', 'warning');
+                }
+            } catch (e) {
+                console.error('Health check failed:', e);
+            }
+        }
+
+        checkHealth();
+    </script>
+</body>
+</html>
+
