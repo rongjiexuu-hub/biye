@@ -457,63 +457,98 @@ class SimpleSMPL(nn.Module):
 
     def _load_smpl_model(self, model_path: str):
         """加载SMPL模型文件（支持.npz和.pkl格式）"""
-
         if model_path.endswith('.npz'):
-            # 加载预处理的npz格式
             smpl_data = np.load(model_path)
-            v_template = smpl_data['v_template'].astype(np.float32)
-            shapedirs = smpl_data['shapedirs'].astype(np.float32)
-            posedirs = smpl_data['posedirs'].astype(np.float32)
-            weights = smpl_data['weights'].astype(np.float32)
-            faces = smpl_data['f'].astype(np.int64)
-            J_regressor = smpl_data['J_regressor'].astype(np.float32)
-            kintree_table = smpl_data['kintree_table']
+            v_template, shapedirs, posedirs, weights, faces, J_regressor, kintree_table = smpl_data['v_template'], \
+            smpl_data['shapedirs'], smpl_data['posedirs'], smpl_data['weights'], smpl_data['f'], smpl_data[
+                'J_regressor'], smpl_data['kintree_table']
         else:
-            # 加载原始pkl格式（需要chumpy）
             import pickle
-
             with open(model_path, 'rb') as f:
                 smpl_data = pickle.load(f, encoding='latin1')
 
             def to_numpy(x):
-                """将chumpy对象或其他类型转换为numpy数组"""
-                if hasattr(x, 'r'):
-                    return np.array(x.r(), dtype=np.float32)
-                elif isinstance(x, np.ndarray):
-                    return x.astype(np.float32)
-                else:
-                    return np.array(x, dtype=np.float32)
+                return np.array(x.r if hasattr(x, 'r') else x, dtype=np.float32)
 
-            v_template = to_numpy(smpl_data['v_template'])
-            shapedirs = to_numpy(smpl_data['shapedirs'])
-            posedirs = to_numpy(smpl_data['posedirs'])
-            weights = to_numpy(smpl_data['weights'])
-            faces = np.array(smpl_data['f'], dtype=np.int64)
-
-            J_regressor = smpl_data['J_regressor']
-            if hasattr(J_regressor, 'toarray'):
-                J_regressor = J_regressor.toarray()
-            J_regressor = np.array(J_regressor, dtype=np.float32)
+            v_template, shapedirs, posedirs, weights, faces = to_numpy(smpl_data['v_template']), to_numpy(
+                smpl_data['shapedirs']), to_numpy(smpl_data['posedirs']), to_numpy(smpl_data['weights']), np.array(
+                smpl_data['f'], dtype=np.int64)
+            J_regressor = smpl_data['J_regressor'].toarray() if hasattr(smpl_data['J_regressor'],
+                                                                        'toarray') else np.array(
+                smpl_data['J_regressor'], dtype=np.float32)
             kintree_table = smpl_data['kintree_table']
-
-        # 只使用前10个形状参数（HMR预测10维）
-        if shapedirs.shape[-1] > 10:
-            shapedirs = shapedirs[..., :10]
-
+        if shapedirs.shape[-1] > 10: shapedirs = shapedirs[..., :10]
         self.register_buffer('v_template', torch.tensor(v_template, dtype=torch.float32))
         self.register_buffer('shapedirs', torch.tensor(shapedirs, dtype=torch.float32))
-        self.register_buffer('posedirs', torch.tensor(posedirs, dtype=torch.float32))
+        # 转换 posedirs 形状以匹配 LBS 计算: (num_joints*9, V, 3) -> (V*3, num_joints*9)
+        self.register_buffer('posedirs', torch.tensor(posedirs.reshape(6890 * 3, -1).T, dtype=torch.float32))
         self.register_buffer('J_regressor', torch.tensor(J_regressor, dtype=torch.float32))
         self.register_buffer('weights', torch.tensor(weights, dtype=torch.float32))
         self.register_buffer('faces', torch.tensor(faces, dtype=torch.long))
-
-        parents = np.array(kintree_table[0], dtype=np.int64).copy()
+        parents = np.array(kintree_table[0], dtype=np.int64);
         parents[0] = -1
         self.register_buffer('parents', torch.tensor(parents, dtype=torch.long))
+        print(f"  - 顶点数: {v_template.shape[0]}, 形状参数维度: {shapedirs.shape}, 关节数: {J_regressor.shape[0]}")
 
-        print(f"  - 顶点数: {v_template.shape[0]}")
-        print(f"  - 形状参数维度: {shapedirs.shape}")
-        print(f"  - 关节数: {J_regressor.shape[0]}")
+    def batch_rodrigues(self, rot_vecs: torch.Tensor) -> torch.Tensor:
+        """ 批量将轴角旋转向量转换为旋转矩阵 (Rodrigues's formula) """
+        batch_size = rot_vecs.shape[0]
+        device = rot_vecs.device
+
+        angle = torch.norm(rot_vecs + 1e-8, dim=1, keepdim=True)
+        rot_dir = rot_vecs / angle
+
+        cos = torch.unsqueeze(torch.cos(angle), dim=1)
+        sin = torch.unsqueeze(torch.sin(angle), dim=1)
+
+        rx, ry, rz = torch.split(rot_dir, 1, dim=1)
+        zeros = torch.zeros((batch_size, 1), device=device)
+        K = torch.cat([zeros, -rz, ry, rz, zeros, -rx, -ry, rx, zeros], dim=1).view((batch_size, 3, 3))
+
+        ident = torch.eye(3, device=device).unsqueeze(dim=0)
+        rot_mat = ident + sin * K + (1 - cos) * torch.bmm(K, K)
+        return rot_mat
+
+    def batch_global_rigid_transformation(self, rot_mats: torch.Tensor, joints: torch.Tensor) -> torch.Tensor:
+        """ 计算每个关节相对于根关节的全局刚性变换 """
+        batch_size = rot_mats.shape[0]
+        
+        # 修复 in-place 操作：通过 cat 构造新张量而非修改切片
+        rel_joints = torch.cat([
+            joints[:, 0:1],
+            joints[:, 1:] - joints[:, self.parents[1:]]
+        ], dim=1)
+
+        transforms_mat = torch.cat([rot_mats, rel_joints.unsqueeze(-1)], dim=-1)
+        
+        # 填充 [0, 0, 0, 1] 使其变为 4x4 矩阵
+        padding = torch.tensor([0, 0, 0, 1], dtype=torch.float32, device=rot_mats.device).view(1, 1, 1, 4)
+        padding = padding.expand(batch_size, self.NUM_JOINTS, 1, 4)
+        transforms_mat = torch.cat([transforms_mat, padding], dim=2)
+
+        transform_chain = [transforms_mat[:, 0]]
+        for i in range(1, self.parents.shape[0]):
+            curr_res = torch.matmul(transform_chain[self.parents[i]], transforms_mat[:, i])
+            transform_chain.append(curr_res)
+
+        transforms = torch.stack(transform_chain, dim=1)
+
+        # 提取全局关节位置 (使用 clone() 避免 in-place 修改影响梯度)
+        posed_joints = transforms[:, :, :3, 3].clone()
+        
+        # 减去 T-pose 关节位置的偏移
+        joints_homo = F.pad(joints, (0, 1), value=0)
+        init_bone = torch.matmul(transforms, joints_homo.unsqueeze(-1))
+
+        # 修复 in-place 操作：通过减法创建一个新的 A 张量，而不是修改 transforms[..., 3]
+        # 构造一个与 transforms 形状相同的偏移张量
+        offset = torch.zeros_like(transforms)
+        # 将 init_bone 的值放入 offset 的最后一列（前三行）
+        # 这里使用赋值是安全的，因为 offset 是刚刚创建的全零张量
+        offset[:, :, :3, 3] = init_bone[:, :, :3, 0]
+        
+        A = transforms - offset
+        return A, posed_joints
 
     def forward(
         self,
@@ -522,79 +557,44 @@ class SimpleSMPL(nn.Module):
         translation: Optional[torch.Tensor] = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        从SMPL参数生成3D人体网格
-        使用标准的线性混合蒙皮 (LBS) 算法
-
-        Args:
-            pose: 姿态参数 (B, 72)
-            shape: 形状参数 (B, 10)
-            translation: 平移 (B, 3)
-
-        Returns:
-            vertices: 顶点坐标 (B, 6890, 3)
-            joints: 关节坐标 (B, 24, 3)
+        从SMPL参数生成3D人体网格 (完整LBS版本)
         """
         batch_size = pose.size(0)
         device = pose.device
 
-        # 确保模板在正确的设备上
-        v_template = self.v_template.to(device)  # (6890, 3)
-        shapedirs = self.shapedirs.to(device)  # (6890, 3, 10)
-        J_regressor = self.J_regressor.to(device)  # (24, 6890)
+        # 1. 应用形状变形 (v_shaped = v_template + shapedirs * shape)
+        blend_shape = torch.einsum('vij,bj->bvi', self.shapedirs, shape)
+        v_shaped = self.v_template.unsqueeze(0) + blend_shape
 
-        # 应用形状变形: v_shaped = v_template + shapedirs * shape
-        if len(shapedirs.shape) == 3:
-            # 标准SMPL格式: (V, 3, num_betas)
-            blend_shape = torch.einsum('vij,bj->bvi', shapedirs, shape)
-        else:
-            # 扁平格式: (V*3, num_betas)
-            blend_shape = torch.matmul(shape, shapedirs.T).view(batch_size, -1, 3)
+        # 2. 计算T-pose下的关节位置
+        J = torch.matmul(self.J_regressor, v_shaped)
 
-        v_shaped = v_template.unsqueeze(0) + blend_shape  # (B, 6890, 3)
+        # 3. 计算姿态驱动的变换矩阵
+        pose_view = pose.view(batch_size, -1, 3)
+        rot_mats = self.batch_rodrigues(pose_view.view(-1, 3)).view(batch_size, -1, 3, 3)
 
-        # 计算关节位置: J_regressor (24, 6890) x v_shaped (B, 6890, 3) -> joints (B, 24, 3)
-        joints = torch.matmul(J_regressor, v_shaped)  # (B, 24, 3)
+        # 4. 计算全局关节变换 (A 是蒙皮矩阵)
+        A, posed_joints = self.batch_global_rigid_transformation(rot_mats, J)
 
-        # 简化版：直接返回形状变形后的顶点和关节
-        vertices = v_shaped
+        # 5. 应用姿态混合形状 (Pose Blendshapes)
+        ident = torch.eye(3, device=device).reshape(1, 1, 3, 3)
+        pose_feature = (rot_mats[:, 1:, :, :] - ident).view(batch_size, -1)
+        pose_blend_shape = torch.matmul(pose_feature, self.posedirs).view(batch_size, -1, 3)
+        v_posed = v_shaped + pose_blend_shape
 
-        # 应用全局旋转（使用前3个参数）
-        global_orient = pose[:, :3]
-        rot_mat = self._axis_angle_to_matrix(global_orient)  # (B, 3, 3)
+        # 6. 线性混合蒙皮 (Linear Blend Skinning)
+        T = torch.matmul(self.weights, A.view(batch_size, self.NUM_JOINTS, 16)).view(batch_size, -1, 4, 4)
 
-        # 旋转顶点和关节
-        vertices = torch.bmm(vertices, rot_mat.transpose(1, 2))  # (B, 6890, 3)
-        joints = torch.bmm(joints, rot_mat.transpose(1, 2))  # (B, 24, 3)
+        v_posed_homo = F.pad(v_posed, (0, 1), value=1)
+        v_skinned_homo = torch.matmul(T, v_posed_homo.unsqueeze(-1))
+        vertices = v_skinned_homo[:, :, :3, 0]
 
-        # 6. 应用全局平移
+        # 7. 应用全局平移
         if translation is not None:
             vertices = vertices + translation.unsqueeze(1)
-            joints = joints + translation.unsqueeze(1)
+            posed_joints = posed_joints + translation.unsqueeze(1)
 
-        return vertices, joints
-
-    def _axis_angle_to_matrix(self, axis_angle: torch.Tensor) -> torch.Tensor:
-        """轴角表示转旋转矩阵"""
-        batch_size = axis_angle.size(0)
-        angle = torch.norm(axis_angle, dim=1, keepdim=True)
-        axis = axis_angle / (angle + 1e-8)
-
-        cos_angle = torch.cos(angle)
-        sin_angle = torch.sin(angle)
-
-        # Rodrigues公式
-        K = torch.zeros(batch_size, 3, 3, device=axis_angle.device)
-        K[:, 0, 1] = -axis[:, 2]
-        K[:, 0, 2] = axis[:, 1]
-        K[:, 1, 0] = axis[:, 2]
-        K[:, 1, 2] = -axis[:, 0]
-        K[:, 2, 0] = -axis[:, 1]
-        K[:, 2, 1] = axis[:, 0]
-
-        eye = torch.eye(3, device=axis_angle.device).unsqueeze(0).expand(batch_size, -1, -1)
-        rot_mat = eye + sin_angle.unsqueeze(2) * K + (1 - cos_angle.unsqueeze(2)) * torch.bmm(K, K)
-
-        return rot_mat
+        return vertices, posed_joints
 
 
 class Pose3DReconstructor:
@@ -704,50 +704,106 @@ class Pose3DReconstructor:
 
         return tensor.unsqueeze(0).to(self.device)
 
-    @torch.no_grad()
     def reconstruct(self, image: np.ndarray, keypoints_2d: Optional[np.ndarray] = None) -> Pose3DResult:
         """
-        从单张图像重建3D人体
-
-        Args:
-            image: BGR格式的输入图像
-            keypoints_2d: 可选的2D关键点 (用于改进3D估计)
-
-        Returns:
-            Pose3DResult对象
+        从单张图像重建3D人体 (基于2D关键点对齐优化的改进版)
         """
         # 预处理图像
         input_tensor = self.preprocess_image(image)
 
-        # 提取特征
-        features = self.encoder(input_tensor)
+        # 1. 初始预测 (HMR)
+        with torch.no_grad():
+            features = self.encoder(input_tensor)
+            pose, shape, cam = self.regressor(features)
 
-        # 预测SMPL参数
-        pose, shape, cam = self.regressor(features)
-
-        # 如果提供了2D关键点，使用它们来改进3D估计
+        # 2. 优化分支
         if keypoints_2d is not None:
-            joints = self._lift_2d_to_3d(keypoints_2d, image.shape[:2])
-            # 使用默认的shape参数生成网络
-            vertices, _ = self.smpl(pose, shape)
+            # 将初始预测作为可训练变量，启用梯度
+            pose_opt = pose.detach().clone().requires_grad_(True)
+            shape_opt = shape.detach().clone().requires_grad_(True)
+            cam_opt = cam.detach().clone().requires_grad_(True)
+            
+            # 3. 准备优化目标 (MediaPipe -> SMPL 映射)
+            mp_to_smpl = {
+                0: 15,   # nose -> head
+                11: 16, 12: 17, # shoulders
+                13: 18, 14: 19, # elbows
+                15: 20, 16: 21, # wrists
+                23: 1, 24: 2,   # hips
+                25: 4, 26: 5,   # knees
+                27: 7, 28: 8    # ankles
+            }
+            
+            h, w = image.shape[:2]
+            target_kpts = np.zeros((24, 2), dtype=np.float32)
+            kpt_mask = np.zeros(24, dtype=np.float32)
+            
+            for mp_idx, smpl_idx in mp_to_smpl.items():
+                if mp_idx < len(keypoints_2d):
+                    kp = keypoints_2d[mp_idx]
+                    # 像素坐标转换为归一化坐标 [-1, 1]
+                    # 这里保持 Y 轴方向与图像一致 (向下为正)
+                    target_kpts[smpl_idx] = [(kp[0] / w) * 2 - 1, (kp[1] / h) * 2 - 1]
+                    kpt_mask[smpl_idx] = 1.0
+            
+            target_kpts_t = torch.tensor(target_kpts, device=self.device).unsqueeze(0)
+            kpt_mask_t = torch.tensor(kpt_mask, device=self.device).unsqueeze(0).unsqueeze(-1)
+            
+            # 4. 设置优化器
+            optimizer = torch.optim.Adam([pose_opt, shape_opt, cam_opt], lr=0.01)
+            
+            # 5. 执行优化循环
+            for _ in range(100):
+                optimizer.zero_grad()
+                
+                # a. 使用当前参数生成 3D 顶点和关节
+                v, j = self.smpl(pose_opt, shape_opt)
+                
+                # b. 将 3D 关节投影到 2D 平面 (避免 in-place 操作)
+                s = cam_opt[:, 0:1].unsqueeze(1) # (B, 1, 1)
+                t = cam_opt[:, 1:3].unsqueeze(1) # (B, 1, 2)
+                
+                # 正交投影公式，注意 Y 轴翻转以匹配图像坐标系
+                j_x = j[:, :, 0] * s[:, :, 0] + t[:, :, 0]
+                j_y = (-j[:, :, 1]) * s[:, :, 0] + t[:, :, 1]
+                projected_joints_2d = torch.stack([j_x, j_y], dim=-1)
+                
+                # c. 计算重投影损失 (Reprojection Loss)
+                reproj_loss = torch.sum(kpt_mask_t * (projected_joints_2d - target_kpts_t)**2)
+                
+                # d. 计算正则化损失 (Regularization Loss)
+                # 使用较小的权重 (0.01) 防止偏离初始预测太远
+                reg_pose = torch.sum((pose_opt - pose)**2)
+                reg_shape = torch.sum((shape_opt - shape)**2)
+                
+                # e. 计算总损失
+                total_loss = reproj_loss + 0.01 * reg_pose + 0.01 * reg_shape
+                
+                # f. 反向传播与更新
+                total_loss.backward()
+                optimizer.step()
+            
+            # 6. 获取最终优化结果
+            pose_final, shape_final, cam_final = pose_opt.detach(), shape_opt.detach(), cam_opt.detach()
+            vertices, joints = self.smpl(pose_final, shape_final)
+            pose, shape, cam = pose_final, shape_final, cam_final
         else:
-            # 生成3D网络
-            vertices, joints = self.smpl(pose, shape)
+            # 不存在 keypoints_2d 时直接使用初始预测
+            with torch.no_grad():
+                vertices, joints = self.smpl(pose, shape)
 
-        # 投影到2D
-        joints_2d = self._project_joints(joints, cam, image.shape[:2])
+        # 转换为 numpy 并封装结果
+        with torch.no_grad():
+            joints_2d = self._project_joints(joints, cam, image.shape[:2])
+            
+            pose_np = pose.cpu().numpy()[0]
+            shape_np = shape.cpu().numpy()[0]
+            cam_np = cam.cpu().numpy()[0]
+            vertices_np = vertices.cpu().numpy()[0]
+            joints_np = joints.cpu().numpy()[0]
+            joints_2d_np = joints_2d.cpu().numpy()[0]
+            faces_np = self.smpl.faces.cpu().numpy()
 
-        # 转换为numpy
-        pose_np = pose.cpu().numpy()[0]
-        shape_np = shape.cpu().numpy()[0]
-        cam_np = cam.cpu().numpy()[0]
-        vertices_np = vertices.cpu().numpy()[0]
-        joints_np = joints.cpu().numpy()[0]
-        joints_2d_np = joints_2d.cpu().numpy()[0]
-        faces_np = self.smpl.faces.cpu().numpy()
-
-
-        # 构建SMPL参数
         smpl_params = SMPLParams(
             pose=pose_np,
             shape=shape_np,
